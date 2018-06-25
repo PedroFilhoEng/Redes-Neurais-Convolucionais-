@@ -1,102 +1,50 @@
-%O imageDatastore rotula automaticamente as imagens com base nos nomes das pastas e armazena os dados como um objeto ImageDatastore
-images = imageDatastore('C:\Users\PF\Documents\dataset\treino','IncludeSubfolders',true,'FileExtensions',{'.jpg','.png'},'LabelSource','foldernames');
+%criando dataset de treinamento e validação.
+imagens = imageDatastore('C:\Users\PF\Documents\treino','IncludeSubfolders',true,'LabelSource','foldernames','FileExtensions',{'.jpg','.png','.tiff','.bmp'});
+%divide o dataset em 80% treino e 20% validação, a escolha das imagens dos
+%grupos de treino e validação é aleatória.
+[trainingImages, testImages] = splitEachLabel(imagens, 0.8, 'randomize');
+%reiniciar a rede alexnet na variável cnn.
+cnn = alexnet; 
+%a variável layers, recebe as camadas rede cnn.
+layers = cnn.Layers; 
+%substitui a camadas 23 por outra camada totalmente conectada, com 2 labels (foco e sem foco). 
+layers(23) = fullyConnectedLayer(2);
+%substitui a camada 25 por outra camada de classificação.
+layers(25) = classificationLayer;
 
-%Divida os dados em conjuntos de dados de treinamento e validação.Usa 70% das imagens para treinamento e 30% para validação. 
-%O splitEachLabel divide o armazenamento de dados das imagens em dois novos armazenamentos de dados.
-[trainingImages,validationImages] = splitEachLabel(images,0.7,'randomized');
+%a variável opts guarda os paramentros de treinamento da rede.
+%sgdm = Descida gradiente estocástica com otimizador de impulso (SGDM).%Você pode especificar o valor de impulso, usando o argumento de par nome-valor 'Momentum' .
+%initiallearnrate = Inicial de aprendizagem taxa utilizada para o treinamento, especificado como o par de separados por vírgulas consistindo de 'InitialLearnRate' e um escalar positivo. O valor padrão é 0,01 para o solver 'sgdm' e 0,001 para os 'rmsprop' e 'adam' solucionadores de problemas. Se a taxa de aprendizagem é muito baixa, então o treinamento leva um longo tempo. Se a taxa de aprendizagem é muito alta, então o treinamento pode chegar a um resultado de qualidade inferior ou divergem.
+%maxepochs = número máximo de épocas a ser usadas para treinamento.
+%minibatchsize = Tamanho do lote mini para usar para cada iteração de formação, especificada como o par de separados por vírgulas consistindo de 'MiniBatchSize' e um número inteiro positivo. Um mini lote é um subconjunto do conjunto de treinamento que é usado para avaliar o gradiente da função perda e atualizar os pesos. Ver estocástico Gradient Descent.
+%verbose = Indicador para exibir informações de progresso de treinamento na janela de comando, especificado como o par de separados por vírgulas consistindo de 'Verbose' e 1 (true) ou 0 (false).
+%plots= 'training-progress'— traçar o progresso do treinamento. A trama mostra perda de mini lote e precisão, perda de validação e precisão e informações adicionais sobre o andamento do treinamento. O enredo tem um botão de stop  no canto superior direito. Clique no botão para parar de treinar e retornar o estado atual da rede. Para obter mais informações sobre a trama de progresso do treinamento, consulte Monitor progresso de formação de aprendizagem profunda.
+opts = trainingOptions('sgdm', 'InitialLearnRate', 0.001,...
+    'MaxEpochs', 20, 'MiniBatchSize', 64,'Verbose',true,...
+    'Plots','training-progress');
 
+%redimensionando as imagens de entrada para 227 × 227 pixels, que é o que AlexNet espera. 
+trainingImages.ReadFcn = @readFunctionTrain;
 
-% Exibe algumas imagens de amostra.
-numTrainImages = numel(trainingImages.Labels);
-idx = randperm(numTrainImages,16);
-figure
-for i = 1:16
-    subplot(4,4,i)
-    I = readimage(trainingImages,idx(i));
-    imshow(I)
-end
-
-%inicia a alexnet na variável net
-net = alexnet;
-
-%mostra as camadas de rede da alexnet
-net.Layers
-
-% A primeira camada, a camada de entrada de imagem, requer imagens
-%de entrada de tamanho 227 por 227 por 3, onde 3 é o número de canais de cor.
-inputSize = net.Layers(1).InputSize
-
-%salva todas as primeiras 22 camdas de rede da alexnet na variável
-%layerTransfer(de 1 até a ultima-3)
-layersTransfer = net.Layers(1:end-3);
-
-%a variável numClasse guarda o n°de labels encontradas no grupo
-%trainingImages(foco;sem foco), variável criada no datastore.
-numClasses = numel(categories(trainingImages.Labels))
+%trainamento da rede recebendo os parâmetros e camadas
+rede = trainNetwork(trainingImages, layers, opts);
 
 
-%Transferi as camadas para a nova tarefa de classificação, substituindo as 
-%três últimas camadas por uma camada totalmente conectada, uma camada 
-%softmax e uma camada de saída de classificação.  Define a camada totalmente 
-%conectada para ter o mesmo tamanho que o número de classes nos novos dados. 
-%Para aprender mais rapidamente nas novas camadas do que nas camadas 
-%transferidas, basta aumentar os valores WeightLearnRateFactor e BiasLearnRateFactor 
-%da camada totalmente conectada.
-layers = [
-    layersTransfer
-    fullyConnectedLayer(numClasses,'WeightLearnRateFactor',20,'BiasLearnRateFactor',20)
-    softmaxLayer
-    classificationLayer];
+testImages.ReadFcn = @readFunctionTrain;
+predictedLabels = classify(rede, testImages); 
 
+accuracy = mean(predictedLabels == testImages.Labels);
 
-% %A rede requer imagens de entrada de tamanho 227 por 227 por 3, mas as
-% %imagens nos datastores de imagem têm tamanhos diferentes. Use um
-% datastore %de imagem aumentada para redimensionar automaticamente as
-% imagens de %treinamento. Especifique operações de aumento adicionais a
-% serem %executadas nas imagens de treinamento: inverta aleatoriamente as
-% imagens %de treinamento ao longo do eixo vertical e as traduza
-% aleatoriamente em %até 30 pixels na horizontal e na vertical. O aumento
-% de dados ajuda a %impedir o overfitting da rede e a memorização dos
-% detalhes exatos das %imagens de treinamento.
-
-
-%pixelRange = [-30 30];
-%imageAugmenter = imageDataAugmenter('RandXReflection',true,'RandXTranslation',pixelRange,'RandYTranslation',pixelRange);
-%augimdsTrain = augmentedImageDatastore(inputSize(1:2),imdsTrain,'DataAugmentation',imageAugmenter);
-%toda vez que tento usar essa função ou parametro augmentedImageDatastore, dá erro no maltlab('Undefined function or variable ')
-
-
-
-%Para redimensionar automaticamente as imagens de validação sem executar o aumento de dados adicional,
-%basta usar um armazenamento de dados de imagem aumentada sem especificar nenhuma operação adicional de pré-processamento.
-%augimdsValidation = augmentedImageDatastore(inputSize(1:2),imdsValidation);
-
-
-%Especificando as opções de treinamento.
-miniBatchSize = 10;
-numIterationsPerEpoch = floor(numel(trainingImages.Labels)/miniBatchSize);
-options = trainingOptions('sgdm',...
-    'MiniBatchSize',miniBatchSize,...
-    'MaxEpochs',4,...
-    'InitialLearnRate',1e-4,...
-    'Verbose',false,...
-    'Plots','training-progress',...
-    'ValidationData',validationImages,...
-    'ValidationFrequency',numIterationsPerEpoch);
+%miniBatchSize = 10;
+%numIterationsPerEpoch = floor(numel(trainingImagens.Labels)/miniBatchSize);
+%options = trainingOptions('sgdm',...
+%    'MiniBatchSize',miniBatchSize,...
+%    'MaxEpochs',4,...
+%    'InitialLearnRate',1e-4,...
+%    'Verbose',false,...
+%    'Plots','training-progress',...
+%    'ValidationData',validationImages,...
+%    'ValidationFrequency',numIterationsPerEpoch);
 
 %treinamento
-netTransfer = trainNetwork(trainingImages,layers,options);
-
-%validação
-predictedLabels = classify(netTransfer,validationImages);
-idx = [1 5 10 15];
-figure
-for i = 1:numel(idx)
-    subplot(2,2,i)
-    I = readimage(validationImages,idx(i));
-    label = predictedLabels(idx(i));
-    imshow(I)
-    title(char(label))
-end
-valLabels = validationImages.Labels;
-accuracy = mean(predictedLabels == valLabels)
+%netTransfer = trainNetwork(trainingImages,layers,options);
